@@ -856,6 +856,6 @@ stop_app(WWW) ->
 
 real_hostname() ->
     case inet:gethostname() of
-        {ok, Host} -> Host;
-        _          -> "localhost"
+        {ok, "nohost.nodomain"} -> "localhost";
+        {ok, Host}              -> Host
     end.

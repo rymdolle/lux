@@ -320,7 +320,7 @@
          orig_files                 :: [string()],
          orig_args                  :: [string()],
          prev_log_dir               :: undefined | string(),
-         mode = execute             :: lux:run_mode(),
+         mode = execute             :: run_mode(),
          skip_unstable = false      :: boolean(),
          skip_skip = false          :: boolean(),
          progress = brief           :: silent | summary | brief |
@@ -366,7 +366,7 @@
         {file           :: string(),
          orig_file      :: string(),
          pos_stack      :: [#cmd_pos{}],
-         mode           :: lux:run_mode(),
+         mode           :: run_mode(),
          skip_unstable  :: boolean(),
          skip_skip      :: boolean(),
          multi_vars     :: [[string()]], % ["name=val"]

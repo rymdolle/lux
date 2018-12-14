@@ -10,11 +10,6 @@
 -export([trace_me/4, trace_me/5]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Types
-
--include("lux.hrl").
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Enable simplified tracing and viewing it as a sequence chart
 %% See et:trace_me/5
 
