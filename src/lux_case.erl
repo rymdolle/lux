@@ -24,15 +24,33 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Interpret parsed script
 
--spec(interpret_commands(filename(),
-                         cmds(),
+-spec(interpret_commands(lux:filename(),
+                         lux:cmds(),
                          [#warning{}],
                          {non_neg_integer(),
                           non_neg_integer(),
                           non_neg_integer()},
-                         opts(),
+                         lux:opts(),
                          [{atom(), term()}]) ->
-             [{ok, summary(), filename(), [result()]} | error()]).
+             [{ok, lux:summary(), lux:filename(), [lux:result()]} | lux:file_error()]).
+
+%% -record(interpret_res,
+%%         {
+%%          outcome      :: 'error' | 'ok',
+%%          file         :: string(),
+%%          lineno       :: string(),
+%%          case_log_dir :: string(),
+%%          warnings     :: [#warning{}],
+%%          unstable     :: [#warning{}],
+%%          reason       :: binary(),
+%%          opaque       :: 'undefined' | term()
+%%         }).
+
+%% {ok, Outcome, Opaque}
+%% {ok, Outcome, File, FullLineNo, CaseLogDir, Warnings, UnstableWarnings, Results, <<>>, [{stopped_by_user, I#istate.stopped_by_user}]}.
+%% {ok, Outcome, File, FullLineNo, CaseLogDir, Warnings, UnstableWarnings, Results, FailBin, Opaque}.
+%% {error,       File, FullLineNo, CaseLogDir, Warnings, <<"suite_timeout">>};
+%% {error,       File, FullLineNo, CaseLogDir, Warnings, UnstableWarnings, ReasonBin}.
 
 interpret_commands(Script, Cmds, Warnings, StartTime, Opts, Opaque) ->
     %% io:format("\nCmds ~p\n", [Cmds]),

@@ -16,10 +16,12 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Parse a script file
 
--spec(parse_file(filename(), run_mode(),
+-spec(parse_file(lux:filename(), lux:run_mode(),
                  boolean(), boolean(), boolean(),
-                 opts()) ->
-             {ok, filename(), cmds(), opts()} | skip() | error()).
+                 lux:opts()) ->
+             {ok, lux:filename(), lux:cmds(), lux:opts()} |
+             lux:file_skip() |
+             lux:file_error()).
 
 parse_file(RelFile, RunMode, SkipUnstable, SkipSkip, CheckDoc, Opts) ->
     try

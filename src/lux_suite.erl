@@ -23,8 +23,9 @@ adjust_files(R) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Run a test suite
 
--spec(run(filename(), opts(), string(), [string()]) ->
-             {ok, summary(), filename(), [result()]} | error() | no_input()).
+-spec(run(lux:filename(), lux:opts(), string(), [string()]) ->
+             {ok, lux:summary(), lux:filename(),
+              [lux:result()]} | lux:file_error() | lux:no_input()).
 
 run(Files, Opts, PrevLogDir, OrigArgs) when is_list(Files) ->
     R0 = #rstate{files = Files,
@@ -212,8 +213,8 @@ write_config_log(SummaryLog, ConfigData) ->
     ConfigLog = filename:join([LogDir, ?SUITE_CONFIG_LOG]),
     ok = lux_log:write_config_log(ConfigLog, ConfigData).
 
--spec(annotate_log(boolean(), filename(), opts()) ->
-             ok | error()).
+-spec(annotate_log(boolean(), lux:filename(), lux:opts()) ->
+             ok | lux:file_error()).
 
 annotate_log(IsRecursive, LogFile, Opts) ->
     DefaultDir = filename:dirname(LogFile),

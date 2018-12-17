@@ -93,8 +93,8 @@
          type       :: atom()}).
 
 -record(warning,
-        {file    :: filename(),
-         lineno  :: lineno(),
+        {file    :: lux:filename(),
+         lineno  :: lux:lineno(),
          details :: binary()}).
 
 -record(result,
@@ -151,12 +151,12 @@
          skip_skip = false          :: boolean(),
          require = []               :: [string()],
          case_prefix = ""           :: string(),
-         config_dir = undefined     :: undefined | string(),
+         config_dir = undefined     :: undefined | lux:dirname(),
          progress = brief           :: silent | summary | brief |
                                        doc | compact | verbose |
                                        etrace | ctrace,
-         suite_log_dir = "lux_logs" :: string(),
-         case_log_dir               :: string(),
+         suite_log_dir = "lux_logs" :: lux:dirname(),
+         case_log_dir               :: lux:dirname(),
          log_fun                    :: function(),
          config_log_fd              :: {true, file:io_device()},
          event_log_fd               :: {true, file:io_device()},
@@ -211,7 +211,7 @@
          id = ?DEFAULT_RUN
                       :: binary(),              % --run
          log = ?DEFAULT_LOG
-                      :: file:filename(),       % file rel to summary log dir
+                      :: lux:filename(),        % file rel to summary log dir
          start_time = ?DEFAULT_TIME
                       :: binary(),
          branch       :: undefined | string(),
@@ -219,9 +219,9 @@
                       :: binary(),              % $HOSTNAME or --hostname
          config_name = ?DEFAULT_CONFIG_NAME
                       :: binary(),              % --config
-         run_dir      :: file:filename(),       % current dir during run
-         run_log_dir  :: file:dirname(),        % dir where logs was created
-         new_log_dir  :: file:dirname(),        % top dir for new logs
+         run_dir      :: lux:filename(),        % current dir during run
+         run_log_dir  :: lux:dirname(),         % dir where logs was created
+         new_log_dir  :: lux:dirname(),         % top dir for new logs
          repos_rev = ?DEFAULT_REV
                       :: binary(),              % --revision
          details = [] :: [#run{}]}).            % list of cases
@@ -229,9 +229,9 @@
 -record(source,
         {branch       :: undefined | string(),
          suite_prefix :: undefined | string(),
-         file         :: file:filename(),       % relative to cwd
-         dir          :: file:dirname(),        % relative to cwd
-         orig         :: file:filename()}).
+         file         :: lux:filename(),        % relative to cwd
+         dir          :: lux:dirname(),         % relative to cwd
+         orig         :: lux:filename()}).
 
 -record(event,
         {lineno  :: non_neg_integer(),
@@ -244,7 +244,7 @@
         {invoke_lineno :: integer(),
          first_lineno  :: non_neg_integer(),
          last_lineno   :: non_neg_integer(),
-         file          :: file:filename(),
+         file          :: lux:filename(),
          events        :: [#event{}]}).
 
 -record(timer,
@@ -320,7 +320,7 @@
          orig_files                 :: [string()],
          orig_args                  :: [string()],
          prev_log_dir               :: undefined | string(),
-         mode = execute             :: run_mode(),
+         mode = execute             :: lux:run_mode(),
          skip_unstable = false      :: boolean(),
          skip_skip = false          :: boolean(),
          progress = brief           :: silent | summary | brief |
@@ -330,7 +330,7 @@
          file_pattern = "^[^\\\.].*\\\.lux" ++ [$$] :: string(),
          case_prefix = ""           :: string(),
          log_fd                     :: file:io_device(),
-         log_dir                    :: file:filename(),
+         log_dir                    :: lux:filename(),
          summary_log                :: string(),
          config_name                :: string(),
          config_file                :: string(),
@@ -366,7 +366,7 @@
         {file           :: string(),
          orig_file      :: string(),
          pos_stack      :: [#cmd_pos{}],
-         mode           :: run_mode(),
+         mode           :: lux:run_mode(),
          skip_unstable  :: boolean(),
          skip_skip      :: boolean(),
          multi_vars     :: [[string()]], % ["name=val"]
@@ -375,18 +375,3 @@
          top_doc        :: undefined | non_neg_integer(),
          newshell       :: boolean()
         }).
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Types
-
--type filename() :: string().
--type dirname()  :: string().
--type opts()     :: [{atom(), term()}].
--type cmds()     :: [#cmd{}].
--type summary()  :: success | skip | warning | fail | error.
--type lineno()   :: string().
--type skip()     :: {skip, filename(), string()}.
--type error()    :: {error, filename(), string()}.
--type no_input() :: {error, undefined, no_input_files}.
--type result()   :: {ok, filename(), summary(), lineno(), [#warning{}]}.
--type run_mode() :: list | list_dir | doc | validate | execute.

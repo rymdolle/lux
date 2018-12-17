@@ -27,8 +27,9 @@ xref:
 
 dialyzer: $(DIALYZER_PLT)
 	dialyzer --src src --src bin --plt $(DIALYZER_PLT) \
-		 -Wunderspecs -Woverspecs \
+		 -Wunderspecs \
 		| tee $(DIALYZER_LOG)
+# -Woverspecs
 
 $(DIALYZER_PLT):
 	dialyzer --build_plt --output_plt $(DIALYZER_PLT) \
