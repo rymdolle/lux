@@ -25,7 +25,7 @@
 %% Interpret parsed script
 
 -spec(interpret_commands(lux:filename(),
-                         lux:cmds(),
+                         [#cmd{}],
                          [#warning{}],
                          {non_neg_integer(),
                           non_neg_integer(),

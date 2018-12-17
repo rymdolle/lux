@@ -12,7 +12,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Types
 
--export_type([filename/0, dirname/0, opts/0, cmds/0, summary/0,
+-export_type([filename/0, dirname/0, opts/0, summary/0,
              lineno/0, file_skip/0, file_error/0, no_input/0,
              result/0, run_mode/0]).
 
@@ -22,7 +22,6 @@
 -type filename()   :: string().
 -type dirname()    :: string().
 -type opts()       :: [{atom(), term()}].
--type cmds()       :: [#cmd{}].
 -type summary()    :: success | skip | warning | fail | error.
 -type lineno()     :: string().
 -type file_skip()  :: {skip, lux:filename(), string()}.
