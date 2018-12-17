@@ -20,22 +20,22 @@
 -include_lib("kernel/include/file.hrl").
 
 -record(dstate,
-        {n_cmds          :: non_neg_integer(),
-         mode            :: background | foreground,
-         interpreter_pid :: pid(),
-         shell_pid       :: undfined | pid(),
-         shell_name      :: undfined | string(),
-         prev_cmd        :: string(),
-         cmd_state       :: term()}).
+        {n_cmds                   :: non_neg_integer(),
+         mode                     :: 'background' | 'foreground',
+         interpreter_pid          :: pid(),
+         shell_pid = no_pid       :: 'no_pid' | pid(),
+         shell_name = no_name     :: 'no_name' | string(),
+         prev_cmd                 :: string(),
+         cmd_state                :: 'no_state' | term()}).
 
 -type debug_type() :: 'integer' |
-                      {'integer', integer(), integer() | infinity} |
+                      {'integer', integer(), integer() | 'infinity'} |
                       'string' |
                       'lineno'.
 -record(debug_param,
         {name     :: string(),
          type     :: debug_type(),
-         presence :: [mandatory | optional],
+         presence :: ['mandatory' | 'optional'],
          help     :: string()}).
 
 -type debug_fun() :: fun((#istate{}, [term()], term()) -> {term(), #istate{}}).
@@ -56,13 +56,13 @@ start_link(DebugFile) ->
     Parent = self(),
     spawn_link(fun() -> init(Parent, DebugFile) end).
 
-init(Ipid, DebugFile) ->
+init(Ipid, DebugFile) when is_pid(Ipid) ->
     DefaultCmd = "help",
     Dstate = #dstate{n_cmds = 1,
                      mode = background,
-                     interpreter_pid=Ipid,
+                     interpreter_pid = Ipid,
                      prev_cmd = DefaultCmd,
-                     cmd_state=undefined},
+                     cmd_state = no_state},
     case DebugFile of
         undefined ->
             loop(Dstate);
@@ -90,7 +90,9 @@ loop(#dstate{mode=Mode} = Dstate) ->
             Name = Dstate#dstate.shell_name,
             NewDstate = call(Dstate, "shell " ++ Name),
             loop(NewDstate);
-        Data when Mode =:= foreground->
+        Data when Mode =:= foreground,
+                  Dstate#dstate.shell_pid =/= no_pid,
+                  Dstate#dstate.interpreter_pid =/= no_pid ->
             Bin = ?l2b(Data),
             Dpid = Dstate#dstate.interpreter_pid,
             Dstate#dstate.shell_pid ! {debug_shell, Dpid, {send,Bin}},
@@ -132,21 +134,21 @@ wait_for_reply(Dstate, Ipid, Timeout) ->
     receive
         {debug_reply, Ipid, CmdStr, NewCmdState, Dshell} ->
             case Dshell of
-                undefined ->
-                    ShellName = undefined,
+                no_shell ->
+                    ShellName = no_name,
                     Mode = background,
-                    ShellPid = undefined;
-                #debug_shell{name=ShellName,
-                             mode=Mode,
-                             pid=ShellPid} ->
+                    ShellPid = no_pid;
+                #debug_shell{name = ShellName,
+                             mode = Mode,
+                             pid = ShellPid} ->
                     ok
             end,
             Dstate#dstate{n_cmds=Dstate#dstate.n_cmds+1,
-                          mode=Mode,
-                          shell_pid=ShellPid,
-                          shell_name=ShellName,
-                          prev_cmd=CmdStr,
-                          cmd_state=NewCmdState}
+                          mode = Mode,
+                          shell_pid = ShellPid,
+                          shell_name = ShellName,
+                          prev_cmd = CmdStr,
+                          cmd_state = NewCmdState}
     after Timeout ->
             if
                 Timeout =:= 0 ->
@@ -177,7 +179,7 @@ wait_for_reply(Dstate, Ipid, Timeout) ->
 
 eval_cmd(I, Dpid, CmdStr, CmdState) when Dpid =:= I#istate.debug_pid ->
     case I#istate.debug_shell of
-        undefined ->
+        no_shell ->
             {CmdState2, I2} = do_eval_cmd(I, CmdStr, CmdState),
             Dshell = I2#istate.debug_shell,
             Dpid ! {debug_reply, self(), CmdStr, CmdState2, Dshell},
@@ -282,8 +284,8 @@ ambiguous(DS, Orig, NamedCmds) ->
                          NamedCmds),
     OptSubCmds =
         case DS of
-            undefined -> [];
-            _         -> ["\n", format_shell_sub_cmds()]
+            no_shell -> [];
+            _        -> ["\n", format_shell_sub_cmds()]
         end,
     lists:flatten(["Available commands: ", Orig, "\n",
                    "-------------------\n",
@@ -663,7 +665,7 @@ lineno_help() ->
 
 gen_markdown(File) ->
     Intro = intro_help(),
-    {error, Ambiguous} = select(undefined, ""),
+    {error, Ambiguous} = select(no_shell, ""),
     Params = param_help(),
     LineNo = lineno_help(),
     Cmds = [["\n", pretty_cmd(Cmd)] ||
@@ -713,7 +715,7 @@ cmd_attach(I, _, CmdState) ->
                 [{"n_lines", 10}, {"lineno", BreakPos}]
         end,
     case opt_block(I) of
-        {false, I2} -> {undefined, I2};
+        {false, I2} -> {no_state, I2};
         {true, I2}  -> cmd_list(I2, ListOpts, CmdState)
     end.
 
@@ -808,7 +810,7 @@ cmd_break(I, Args, _CmdState) ->
                 end,
                 I
         end,
-    {undefined, I2}.
+    {no_state, I2}.
 
 add_break(I, BreakPos, BreakType, Invert) ->
     %% Search for matching command
@@ -986,9 +988,9 @@ do_continue(I, Args, _CmdState, BreakType, Invert) ->
                            [pretty_break_pos(BreakPos2)])
             end,
             {_Blocked, I3} = opt_unblock(I2),
-            {undefined, I3};
+            {no_state, I3};
         false ->
-            {undefined, I2}
+            {no_state, I2}
     end.
 
 opt_unblock(I) ->
@@ -1006,7 +1008,7 @@ opt_unblock(I) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 cmd_help(I, [], CmdState) ->
-    {error, Ambiguous} = select(undefined, ""),
+    {error, Ambiguous} = select(no_shell, ""),
     Params = param_help(),
     format("\n~s~s\n~s", [intro_help(), Ambiguous, Params]),
     {CmdState, I};
@@ -1014,7 +1016,7 @@ cmd_help(I, [{_, "lineno"}], CmdState) ->
     format("~s", [lineno_help()]),
     {CmdState, I};
 cmd_help(I, [{_, CmdName}], CmdState) ->
-    case select(undefined, CmdName) of
+    case select(no_shell, CmdName) of
         {ok, Cmd} ->
             Pretty = lists:flatten(pretty_cmd(Cmd)),
             format("\n~s\n", [Pretty]),
@@ -1199,7 +1201,7 @@ tail(#istate{suite_log_dir=SuiteLogDir} = I,
         {error, FileReason}->
             FileStr = file:format_error(FileReason),
             format("ERROR: ~s: ~s\n", [RelFile, FileStr]),
-            {undefined, I}
+            {no_state, I}
     end.
 
 tail_format("compact", Format, Data) ->
@@ -1229,7 +1231,7 @@ cmd_list(I, Args, CmdState) ->
                 false ->
                     format("\nERROR: No such lineno: ~p\n",
                            [pretty_break_pos(BreakPos)]),
-                    {undefined, I};
+                    {no_state, I};
                 [#cmd_pos{rev_file = RevFile, lineno = First} | _] ->
                     do_list(I, PrevRevFile, RevFile,
                             First, N, CurrentFullLineNo)
@@ -1239,7 +1241,7 @@ cmd_list(I, Args, CmdState) ->
                 false ->
                     format("\nERROR: No such lineno: ~p\n",
                            [pretty_break_pos(BreakPos)]),
-                    {undefined, I};
+                    {no_state, I};
                 [#cmd_pos{rev_file = RevFile, lineno = First0} | _] ->
                     if
                         N0 < 0 ->
@@ -1317,7 +1319,7 @@ do_list(#istate{orig_file = OrigFile, orig_commands = OrigCmds} = I,
     case PosList of
         [] ->
             format("\nWrap file.\n", []),
-            {undefined, I};
+            {no_state, I};
         _ ->
             {{debug_list, N, RevFile, Last+1}, I}
     end.
@@ -1341,11 +1343,11 @@ cmd_load(I, Args, CmdState) ->
                   end,
             Lines = string:tokens(?b2l(Bin), "\n"),
             {_CmdState, I2, _} = lists:foldl(Fun, {CmdState, I, 1}, Lines),
-            {undefined, I2};
+            {no_state, I2};
         {error, Reason} ->
             format("\nERROR: Cannot read from file ~p: ~s\n",
                    [File, file:format_error(Reason)]),
-            {undefined, I}
+            {no_state, I}
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1393,7 +1395,7 @@ cmd_quit(I, Args, _CmdState) ->
     {_, I2} = opt_unblock(I),
     InterpreterPid = self(),
     InterpreterPid ! {stopped_by_user, Scope},
-    {undefined, I2 }.
+    {no_state, I2 }.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -1426,7 +1428,7 @@ cmd_save(I, Args, _CmdState) ->
             format("\nERROR: Cannot write to file ~p: ~s\n",
                    [File, file:format_error(Reason)])
     end,
-    {undefined, I}.
+    {no_state, I}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -1463,14 +1465,14 @@ cmd_shell(I, [], _CmdState) ->
             lists:foreach(Print, AllShells),
             format("\n", [])
     end,
-    {undefined, I};
+    {no_state, I};
 cmd_shell(I, [{"name", Name} | Rest], _CmdState) ->
     AllShells = all_shells(I),
     Filter = fun(S) -> lists:prefix(Name, S#shell.name) end,
     case lists:filter(Filter, AllShells) of
         [] ->
             format("ERROR: ~p does not match any shell name.\n", [Name]),
-            {undefined, I};
+            {no_state, I};
         [#shell{name = N, health = Health, pid = Pid} | Ambiguous]
           when Ambiguous =:= [];
                N =:= Name -> % Give exact match prio
@@ -1480,7 +1482,7 @@ cmd_shell(I, [{"name", Name} | Rest], _CmdState) ->
             end,
             OldN = shell_name(I),
             if
-                OldN =/= undefined ->
+                OldN =/= no_name ->
                     Old = lists:keyfind(OldN, #shell.name, AllShells),
                     Old#shell.pid ! {debug_shell, self(), disconnect};
                 true ->
@@ -1490,39 +1492,39 @@ cmd_shell(I, [{"name", Name} | Rest], _CmdState) ->
                 if
                     Health =:= zombie ->
                         format("ERROR: ~p is a zombie.\n", [Name]),
-                        undefined;
+                        no_shell;
                     N =/= OldN ->
                         Mode = list_to_existing_atom(Mode0),
                         Pid ! {debug_shell, self(), {connect, Mode}},
                         #debug_shell{name=N, mode=Mode, pid=Pid};
                     true ->
-                        undefined
+                        no_shell
                 end,
-            {undefined, I#istate{debug_shell = DS}};
+            {no_state, I#istate{debug_shell = DS}};
         _Ambiguous ->
             format("ERROR: ~p is an ambiguous shell name.\n", [Name]),
-            {undefined, I}
+            {no_state, I}
     end.
 
 all_shells(#istate{active_shell=ActiveShell,
                    shells=Shells}) ->
     AllShells =
         case ActiveShell of
-            undefined -> Shells;
+            no_shell -> Shells;
             #shell{} ->  [ActiveShell | Shells]
         end,
     lists:keysort(#shell.name, AllShells).
 
 shell_name(I) ->
     case I#istate.debug_shell of
-        undefined               -> undefined;
+        no_shell                -> no_name;
         #debug_shell{name=Name} -> Name
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 cmd_trace(I, Args, _CmdState) ->
-    CmdState =  undefined,
+    CmdState =  no_state,
     TraceMode = I#istate.trace_mode,
     case Args of
         [] ->
