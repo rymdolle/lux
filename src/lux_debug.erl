@@ -28,21 +28,29 @@
          prev_cmd                 :: string(),
          cmd_state                :: 'no_state' | term()}).
 
--type debug_type() :: 'integer' |
-                      {'integer', integer(), integer() | 'infinity'} |
+-type debug_type() :: 'lineno' |
                       'string' |
-                      'lineno'.
+                      {'enum', [string()]} |
+                      'binary' |
+                      'atom' |
+%%                    'existing_atom' |
+                      'integer' |
+                      {'integer', integer(), integer() | 'infinity'} |
+%%                    'float' |
+%%                    {'float', float(), float() | 'infinity'} |
+                      'boolean'.
+
 -record(debug_param,
         {name     :: string(),
          type     :: debug_type(),
-         presence :: ['mandatory' | 'optional'],
+         presence :: 'mandatory' | 'optional',
          help     :: string()}).
 
 -type debug_fun() :: fun((#istate{}, [term()], term()) -> {term(), #istate{}}).
 
 -record(debug_cmd,
         {name     :: string(),
-         params   :: [debug_type()],
+         params   :: [#debug_param{}],
          help     :: string(),
          callback :: debug_fun()}).
 
@@ -229,7 +237,7 @@ do_eval_cmd(I, CmdStr, CmdState) when is_list(CmdStr) ->
                 {ok, #debug_cmd{name = _Name,
                                 params = Params,
                                 callback = Fun}} ->
-                    case parse_params(I, Params, Args, [], []) of
+                    case parse_params(I, Params, Args, []) of
                         {ok, Args2} ->
                             %% format("Eval: ~s ~p\n", [_Name, Args2]),
                             Fun(I, Args2, CmdState);
@@ -299,38 +307,45 @@ format_cmd_list({Name, Help}, Longest) when is_list(Name), is_list(Help) ->
     ["* ", string:left(Name, Longest, $\ ), " - ", Slogan, "\n"].
 
 parse_params(I, [#debug_param{name = Name,type = Type} | Params],
-             [Arg | Args], Acc, _Bad) ->
+             [Arg | Args], Acc) ->
 
     try
         Val = parse_param(I, Type, Arg),
-        parse_params(I, Params, Args, [{Name, Val} | Acc], [])
+        parse_params(I, Params, Args, [{Name, Val} | Acc])
     catch
         error:_ ->
             Type2 =
                 if
-                    is_atom(Type) -> ?a2l(Type);
+                    is_atom(Type) -> ?a2l (Type);
                     true          -> ?a2l(element(1, Type))
                 end,
             ReasonStr = lists:flatten(["Bad type of parameter ", Name,
                                        ". Expected ", Type2]),
             {error, ReasonStr}
     end;
-parse_params(_I, Params, [], Acc, Bad) ->
+parse_params(_I, Params, [], Acc) ->
     case [P || P <- Params, P#debug_param.presence =/= optional] of
         [] ->
             {ok, lists:reverse(Acc)};
         Mandatory ->
-            All = Bad ++ Mandatory,
-            Longest = longest(All),
-            DeepList = ["Missing parameter.\nPossible parameters:\n",
-                        [pretty_param(P, Longest) || P <- All]],
+            Optional = Params -- Mandatory,
+            DeepList =
+                [
+                 "Missing parameter.\n",
+                 missing_params("Mandatory parameters:\n", Mandatory),
+                 missing_params("Optional parameters:\n", Optional)
+                ],
             {error, lists:flatten(DeepList)}
     end;
-parse_params(_I, [], [Arg | _], _Acc, Bad) ->
-    Longest = longest(Bad),
-    DeepList = ["Value ", Arg, " has the wrong type.\nPossible parameters:\n",
-                [pretty_param(P, Longest) || P <- Bad]],
+parse_params(_I, [], Args, _Acc) ->
+    DeepList = ["Too many parameters:", [[" ", A] || A <- Args]],
     {error, lists:flatten(DeepList)}.
+
+missing_params(_Prefix, []) ->
+    [];
+missing_params(Prefix, Missing) ->
+    Longest= longest(Missing),
+    [Prefix, [pretty_param(P, Longest) || P <- Missing]].
 
 parse_param(I, Type, Val) ->
     case Type of
@@ -345,8 +360,8 @@ parse_param(I, Type, Val) ->
             ?l2b(Val);
         atom ->
             list_to_atom(Val);
-        existing_atom ->
-            list_to_existing_atom(Val);
+%%      existing_atom ->
+%%          list_to_existing_atom(Val);
         integer ->
             list_to_integer(Val);
         {integer, _Min, infinity} when Val =:= "infinity" ->
@@ -361,20 +376,20 @@ parse_param(I, Type, Val) ->
             if
                 Int >= Min, Int =< Max -> Int
             end;
-        float ->
-            list_to_float(Val);
-        {float, _Min, infinity} when Val =:= "infinity" ->
-            999999.0;
-        {float, Min, infinity} ->
-            Float = list_to_float(Val),
-            if
-                Float >= Min -> Float
-            end;
-        {float, Min, Max} ->
-            Float = list_to_float(Val),
-            if
-                Float >= Min, Float =< Max -> Float
-            end;
+%%      float ->
+%%          list_to_float(Val);
+%%      {float, _Min, infinity} when Val =:= "infinity" ->
+%%          999999.0;
+%%      {float, Min, infinity} ->
+%%          Float = list_to_float(Val),
+%%          if
+%%              Float >= Min -> Float
+%%          end;
+%%      {float, Min, Max} ->
+%%          Float = list_to_float(Val),
+%%          if
+%%              Float >= Min, Float =< Max -> Float
+%%          end;
         boolean when Val =:= true; Val =:= "true" ->
             true;
         boolean when Val =:= false; Val =:= "false" ->
@@ -593,7 +608,6 @@ cmds() ->
                 "Default is to display the trace mode (none|case|suite|event).",
                 callback = fun cmd_trace/3}
     ].
-
 
 format_shell_sub_cmds() ->
     NamedCmds = shell_sub_cmds(),
@@ -1056,15 +1070,15 @@ pretty_param(#debug_param{name = Name, type = Type, help = Help}, Longest) ->
                 "string";
             atom ->
                 "string";
-            existing_atom ->
-                "string";
+%%          existing_atom ->
+%%              "string";
             {enum, [H | T]} ->
                 [
                  "enum(",
                  H, [["|", Elem] || Elem <- T],
                  ")"
                 ];
-            {Atom, Min, Max} ->
+            {Atom, Min, Max} when is_atom(Atom) ->
                 [
                  ?FF("~p", [Min]),
                  " >= ",
@@ -1072,7 +1086,7 @@ pretty_param(#debug_param{name = Name, type = Type, help = Help}, Longest) ->
                  " =< ",
                  ?FF("~p", [Max])
                 ];
-            Atom ->
+            Atom when is_atom(Atom) ->
                 ?a2l(Atom)
         end,
     ["* ", string:left(Name, Longest, $\ ),
@@ -1084,10 +1098,10 @@ longest(Elems) ->
 longest2([H | T], Longest) ->
     case H of
         {_Name, #debug_cmd{name = Str}} -> ok;
-        #debug_cmd{name = Str} -> ok;
+%%      #debug_cmd{name = Str} -> ok;
         #debug_param{name = Str} -> ok;
-        {Str, _Help} when is_list(Str) -> ok;
-        Str when is_list(Str) -> ok
+        {Str, _Help} when is_list(Str) -> ok
+%%      Str when is_list(Str) -> ok
     end,
     longest2(T, lists:max([Longest, length(Str)]));
 longest2([], Longest) ->
@@ -1154,6 +1168,8 @@ cmd_tail(I, [{"index", Index} | Rest], CmdState) ->
         LogFile ->
             tail(I2, LogFile, CmdState, Format, UserN)
     end.
+
+-spec all_logs(#istate{}) -> {#istate{}, [lux:filename()]}.
 
 all_logs(#istate{orig_file=Script,
                  suite_log_dir=SuiteLogDir,
@@ -1361,11 +1377,11 @@ cmd_next(I, [], CmdState) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 cmd_progress(I, Args, CmdState) ->
-    case Args of
-        [{"level", Level0}] ->
-            Level = list_to_existing_atom(Level0);
-        [] ->
-            Level =
+    Level =
+        case Args of
+            [{"level", Level0}] ->
+                list_to_atom(Level0);
+            [] ->
                 case I#istate.progress of
                     etrace  -> brief;
                     ctrace  -> brief;
@@ -1376,7 +1392,7 @@ cmd_progress(I, Args, CmdState) ->
                     summary -> verbose;
                     silent  -> verbose
                 end
-    end,
+        end,
     lists:foreach(fun(#shell{pid = Pid}) -> Pid ! {progress, self(), Level} end,
                   I#istate.shells),
     {CmdState, I#istate{progress = Level}}.
@@ -1390,7 +1406,7 @@ cmd_quit(I, Args, _CmdState) ->
         [] ->
             ScopeStr = "case"
         end,
-    Scope = list_to_existing_atom(ScopeStr),
+    Scope = list_to_atom(ScopeStr),
     format("\nWARNING: Test ~s stopped by user\n", [ScopeStr]),
     {_, I2} = opt_unblock(I),
     InterpreterPid = self(),
@@ -1494,7 +1510,7 @@ cmd_shell(I, [{"name", Name} | Rest], _CmdState) ->
                         format("ERROR: ~p is a zombie.\n", [Name]),
                         no_shell;
                     N =/= OldN ->
-                        Mode = list_to_existing_atom(Mode0),
+                        Mode = list_to_atom(Mode0),
                         Pid ! {debug_shell, self(), {connect, Mode}},
                         #debug_shell{name=N, mode=Mode, pid=Pid};
                     true ->
