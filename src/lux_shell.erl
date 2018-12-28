@@ -204,8 +204,8 @@ shell_wait_for_event(#cstate{name = _Name} = C, OrigC) ->
         {wakeup, Secs} ->
             clog(C, wake, "up (~p seconds)", [Secs]),
             dlog(C, ?dmore,"mode=resume (wakeup)", []),
-            undefined = C#cstate.expected, % Assert
-            C2 = C#cstate{mode = resume, wakeup = undefined},
+            no_cmd = C#cstate.expected, % Assert
+            C2 = C#cstate{mode = resume, wakeup = no_wakeup},
             expect_more(C2);
         {Port, {exit_status, ExitStatus}} when Port =:= C#cstate.port ->
             C#cstate{state_changed = true,
@@ -214,7 +214,7 @@ shell_wait_for_event(#cstate{name = _Name} = C, OrigC) ->
                      events = save_event(C, recv, ?shell_exit)};
         {'EXIT', Port, _PosixCode}
           when Port =:= C#cstate.port,
-               C#cstate.exit_status =/= undefined ->
+               C#cstate.exit_status =/= no_exit ->
             C;
         {'DOWN', _, process, Pid, Reason} ->
             if
@@ -274,9 +274,9 @@ interpreter_died(C, Reason) ->
 timeout(C) ->
     IdleThreshold = timer:seconds(3),
     if
-        C#cstate.expected =:= undefined ->
+        C#cstate.expected =:= no_cmd ->
             infinity;
-        C#cstate.timer =/= undefined ->
+        C#cstate.timer =/= no_timer ->
             IdleThreshold;
         true ->
             IdleThreshold
@@ -368,7 +368,7 @@ block(C, From, OrigC) ->
             shell_wait_for_event(C2, OrigC);
         {'EXIT', Port, _PosixCode}
           when Port =:= C#cstate.port,
-               C#cstate.exit_status =/= undefined ->
+               C#cstate.exit_status =/= no_exit ->
             shell_wait_for_event(C, OrigC);
         {shutdown = Data, _From} ->
             stop(C, shutdown, Data);
@@ -436,7 +436,7 @@ opt_sync_reply(C, From, When) when C#cstate.wait_for_expect =:= undefined ->
             sync_reply(C, From);
         immediate ->
             sync_reply(C, From);
-        wait_for_expect when C#cstate.expected =:= undefined ->
+        wait_for_expect when C#cstate.expected =:= no_cmd ->
             sync_reply(C, From);
         wait_for_expect ->
             C#cstate{wait_for_expect = From}
@@ -471,7 +471,7 @@ assert_eval(C, Cmd, _From)
     stop(C2, error, ErrBin);
 assert_eval(C, _Cmd, _From) when C#cstate.no_more_input ->
     stop(C, fail, endshell);
-assert_eval(C, _Cmd, _From) when C#cstate.expected =:= undefined ->
+assert_eval(C, _Cmd, _From) when C#cstate.expected =:= no_cmd ->
     ok;
 assert_eval(_C, Cmd, _From) when Cmd#cmd.type =:= variable;
                                  Cmd#cmd.type =:= sleep;
@@ -525,7 +525,7 @@ shell_eval(#cstate{name = Name} = C0,
                 true ->
                     C#cstate{pre_expected = [Cmd | C#cstate.pre_expected]}
             end;
-        expect when C#cstate.expected =:= undefined andalso
+        expect when C#cstate.expected =:= no_cmd andalso
                     C#cstate.pre_expected =:= [] ->
             %% Single regexp
             true = lists:member(element(2, Arg), [single,multi]), % Assert
@@ -552,7 +552,7 @@ shell_eval(#cstate{name = Name} = C0,
         fail ->
             PatCmd =
                 if
-                    Arg =:= reset -> undefined;
+                    Arg =:= reset -> no_pattern;
                     true          -> Cmd
                 end,
             {_, RegExp} = extract_regexp(Arg),
@@ -562,7 +562,7 @@ shell_eval(#cstate{name = Name} = C0,
         success ->
             PatCmd =
                 if
-                    Arg =:= reset -> undefined;
+                    Arg =:= reset -> no_pattern;
                     true          -> Cmd
                 end,
             {_, RegExp} = extract_regexp(Arg),
@@ -588,7 +588,7 @@ shell_eval(#cstate{name = Name} = C0,
             Secs = Arg,
             clog(C, sleep, "(~p seconds)", [Secs]),
             true = is_integer(Secs), % Assert
-            undefined = C#cstate.expected, % Assert
+            no_cmd = C#cstate.expected, % Assert
             Progress = C#cstate.progress,
             Self = self(),
             WakeUp = {wakeup, Secs},
@@ -643,7 +643,7 @@ shell_eval(#cstate{name = Name} = C0,
         cleanup ->
             cleanup(C);
         Unexpected ->
-            clog(C, shell_got_msg, "~p\n", [element(1, Unexpected)]),
+            clog(C, shell_got_cmd, "~p\n", [Unexpected]),
             Err = ?FF("[shell ~s] got cmd with type ~p ~p\n",
                       [Name, Unexpected, Arg]),
             stop(C, error, ?l2b(Err))
@@ -654,12 +654,12 @@ cleanup(C) ->
     Data = flush_port(C1, C1#cstate.flush_timeout, C1#cstate.actual),
     C2 = match_patterns(C1#cstate{actual = Data}),
     case C2#cstate.fail of
-        undefined -> ok;
-        _         -> clog(C2, fail, "pattern reset", [])
+        no_pattern -> ok;
+        _          -> clog(C2, fail, "pattern reset", [])
     end,
     case C2#cstate.success of
-        undefined  -> ok;
-        _          -> clog(C2, success, "pattern reset", [])
+        no_pattern  -> ok;
+        _           -> clog(C2, success, "pattern reset", [])
     end,
     LoopStack = C2#cstate.loop_stack,
     LoopStack2  = [L#loop{mode = break} || L <- LoopStack],
@@ -667,9 +667,9 @@ cleanup(C) ->
         false -> ok;
         true  -> clog(C2, break, "pattern reset", [])
     end,
-    C3 = C2#cstate{expected = undefined,
-                   fail = undefined,
-                   success = undefined,
+    C3 = C2#cstate{expected = no_cmd,
+                   fail = no_pattern,
+                   success = no_pattern,
                    loop_stack = LoopStack2},
     dlog(C3, ?dmore, "expected=undefined (cleanup)", []),
     opt_late_sync_reply(C3).
@@ -731,7 +731,7 @@ send_to_port(C, Data) ->
                               events = save_event(C, recv, ?shell_exit)};
                 {'EXIT', Port, _PosixCode}
                   when Port =:= C2#cstate.port,
-                       C#cstate.exit_status =/= undefined ->
+                       C#cstate.exit_status =/= no_exit ->
                     C2
             after 0 ->
                     C2
@@ -754,9 +754,9 @@ want_more(#cstate{mode = Mode,
                   waiting = Waiting,
                   wakeup = Wakeup}) ->
     Mode =:= resume andalso
-    Expected =:= undefined andalso
+    Expected =:= no_cmd andalso
     not Waiting andalso
-    Wakeup =:= undefined.
+    Wakeup =:= no_wakeup.
 
 expect_more(C) ->
     C2 = expect(C),
@@ -798,20 +798,20 @@ expect(#cstate{state_changed = true,
     %% Something has changed
     C = C0#cstate{state_changed = false},
     case Expected of
-        _ when C#cstate.wakeup =/= undefined ->
+        _ when C#cstate.wakeup =/= no_wakeup ->
             %% Sleeping
-            undefined = Expected, % Assert
+            no_cmd = Expected, % Assert
             suspend = C#cstate.mode, % Assert
-            undefined = C#cstate.timer, % Assert
+            no_timer = C#cstate.timer, % Assert
             C;
         _ when C#cstate.mode =:= suspend ->
             %% Suspended
-            undefined = Expected, % Assert
-            undefined = C#cstate.timer, % Assert
+            no_cmd = Expected, % Assert
+            no_timer = C#cstate.timer, % Assert
             C;
         undefined when C#cstate.mode =:= resume ->
             %% Nothing to wait for
-            undefined = C#cstate.timer, % Assert
+            no_timer = C#cstate.timer, % Assert
             C;
         #cmd{arg = Arg} when C#cstate.mode =:= resume ->
             %% Waiting
@@ -831,7 +831,7 @@ expect(#cstate{state_changed = true,
                     C3 = cancel_timer(C2),
                     ExitStatus = ?l2b(?i2l(C3#cstate.exit_status)),
                     try_match(C3, ExitStatus, C3#cstate.expected, Actual),
-                    opt_late_sync_reply(C3#cstate{expected = undefined});
+                    opt_late_sync_reply(C3#cstate{expected = no_cmd});
                 NoMoreOutput ->
                     %% Got end of file while waiting for more data
                     C2 = match_patterns(C),
@@ -843,7 +843,7 @@ expect(#cstate{state_changed = true,
                     match_patterns(C);
                 true ->
                     %% Waiting for more data
-                    try_match(C, Actual, C#cstate.expected, undefined)
+                    try_match(C, Actual, C#cstate.expected, no_alt_skip)
 
             end
     end.
@@ -866,7 +866,7 @@ try_match(C, Actual, Expected, AltSkip) ->
             C3 = match_patterns(C2, SkipMatch, Rest, LogFuns),
             SubMatches = [], % Don't bother about sub-patterns
             match_more(C3, Skip, SubMatches);
-        {nomatch, _} when AltSkip =:= undefined ->
+        {nomatch, _} when AltSkip =:= no_alt_skip ->
             %% Main pattern does not match
             %% Wait for more input
              match_patterns(C);
@@ -895,7 +895,7 @@ match_more(C, _Skip, SubMatches) ->
                   [ lux_utils:quote_newlines(SV)]) ||
                 SV <- SubVars],
             send_reply(C, C#cstate.parent, {submatch_vars, self(), SubVars}),
-            C2 = C#cstate{expected = undefined},
+            C2 = C#cstate{expected = no_cmd},
             dlog(C2, ?dmore, "expected=[] (waiting)", []),
             opt_late_sync_reply(C2)
     end.
@@ -960,7 +960,7 @@ log_multi_nomatch(C, {multi, Multi}, Actual) ->
                 case OptMatch of
                     {match, [{First, TotLen} | _] = _Matches} ->
                         {_Skip, Match, _Rest} =
-                            split_total(Actual, First, TotLen, undefined),
+                            split_total(Actual, First, TotLen, no_alt_skip),
                         clog(C, found, "~s\"~s\"", [Context, F]),
                         FA = ["    Found: ",
                               lux_utils:to_string(Match), "\n"],
@@ -1106,11 +1106,11 @@ do_prepare_stop(C, Match, Context) ->
 
 clear_expected(C, Context, Mode) ->
     case C#cstate.wakeup of
-        undefined -> ok;
+        no_wakeup -> ok;
         WakeupRef -> erlang:cancel_timer(WakeupRef)
     end,
     C2 = cancel_timer(C),
-    C3 = C2#cstate{mode = Mode, expected = undefined, wakeup = undefined},
+    C3 = C2#cstate{mode = Mode, expected = no_cmd, wakeup = no_wakeup},
     dlog(C3, ?dmore, "expected=[]~s", [Context]),
     C3.
 
@@ -1148,11 +1148,13 @@ split_total(Actual, First, TotLen, AltSkip) ->
     {Consumed, Rest} = split_binary(Actual, First+TotLen),
     {Skip, Match} = split_binary(Consumed, First),
     case AltSkip of
-        undefined -> {Skip, Match, Rest};
-        _         -> {AltSkip, Actual, <<>>}
+        no_alt_skip -> {Skip, Match, Rest};
+        _           -> {AltSkip, Actual, <<>>}
     end.
 
-match(_Actual, undefined) ->
+match(_Actual, no_cmd) ->
+    {nomatch, single};
+match(_Actual, no_pattern) ->
     {nomatch, single};
 match(Actual, #pattern{cmd = Cmd}) -> % fail or success pattern
     match(Actual, Cmd);
@@ -1229,7 +1231,7 @@ start_timer(#cstate{} = C) ->
     clog(C, timer, "already set", []),
     C.
 
-cancel_timer(#cstate{timer = undefined} = C) ->
+cancel_timer(#cstate{timer = no_timer} = C) ->
     C;
 cancel_timer(#cstate{match_timeout = MaxTimeout,
                      timer = Timer,
@@ -1257,8 +1259,8 @@ cancel_timer(#cstate{match_timeout = MaxTimeout,
                 end
         end,
     C#cstate{idle_count = 0,
-             timer = undefined,
-             timer_started_at = undefined,
+             timer = no_timer,
+             timer_started_at = no_timer,
              warnings = NewWarnings}.
 
 make_warning(#cstate{orig_file = File,
@@ -1370,7 +1372,7 @@ stop(C, Outcome0, Actual) when is_binary(Actual);
     %% io:format("\nRES ~p\n", [Res]),
     ?TRACE_ME2(40, C#cstate.name, Outcome, [{actual, Actual}, Res]),
 %%  C2 = opt_late_sync_reply(C#cstate{expected = undefined}),
-    C2 = C#cstate{expected = undefined, actual = <<>>},
+    C2 = C#cstate{expected = no_cmd, actual = <<>>},
     C3 = close_logs(C2),
     send_reply(C3, C3#cstate.parent, {stop, self(), Res}),
     if
@@ -1460,7 +1462,7 @@ close_and_exit(C, Reason, Error) when element(1, Error) =:= internal_error ->
             clog(C, 'INTERNAL ERROR', "\"~p@~p\"", [Why, Cmd#cmd.lineno])
     end,
 %%  C2 = opt_late_sync_reply(C#cstate{expected = undefined}),
-    C2 = C#cstate{expected = undefined},
+    C2 = C#cstate{expected = no_cmd},
     C3 = close_logs(C2),
     send_reply(C3, C3#cstate.parent, {stop, self(), Res}),
     close_and_exit(C3, Reason, Res).
@@ -1515,7 +1517,7 @@ wait_for_down(C, Res) ->
             wait_for_down(C2, Res);
         {'EXIT', Port, _PosixCode}
           when Port =:= C#cstate.port,
-               C#cstate.exit_status =/= undefined ->
+               C#cstate.exit_status =/= no_exit ->
             wait_for_down(C, Res)
     end.
 
