@@ -1217,10 +1217,10 @@ do_flush_port(Port, Timeout, N, Acc) ->
             {N, Acc}
     end.
 
-start_timer(#cstate{timer = undefined, match_timeout = infinity} = C) ->
+start_timer(#cstate{timer = no_timer, match_timeout = infinity} = C) ->
     clog(C, timer, "started (infinity)", []),
     C#cstate{timer = infinity, timer_started_at = lux_utils:timestamp()};
-start_timer(#cstate{timer = undefined} = C) ->
+start_timer(#cstate{timer = no_timer} = C) ->
     Secs = C#cstate.match_timeout div ?ONE_SEC,
     Multiplier = C#cstate.multiplier / ?ONE_SEC,
     clog(C, timer, "started (~p seconds * ~.3f multiplier)",
