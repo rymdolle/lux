@@ -160,8 +160,8 @@ progress_token(#cstate{idle_count = IdleCount} = C) ->
     end.
 
 shell_wait_for_event(#cstate{name = _Name} = C, OrigC) ->
-    ?TRACE_ME2(40, C#cstate.name, wait_for_event, []),
     Timeout = timeout(C),
+    ?TRACE_ME2(40, C#cstate.name, wait_for_event, [{timeout, Timeout}]),
     receive
         {block, From} ->
             %% io:format("\nBLOCK ~s\n", [C#cstate.name]),

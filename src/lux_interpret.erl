@@ -347,6 +347,7 @@ sync_return(I) ->
     end.
 
 opt_dispatch_cmd(#istate{commands = Cmds, want_more = WantMore} = I) ->
+io:format("\nTIMEOUT ~p; CMDS ~p\n", [WantMore, I#istate.commands]),
     case Cmds of
         [#cmd{lineno = CmdLineNo} = Cmd | Rest] when WantMore ->
             case lux_debug:check_breakpoint(I, CmdLineNo) of
@@ -1326,7 +1327,7 @@ prepare_shell_prompt(I, Cmd) ->
     Sync = Cmd#cmd{type = expect,
                    arg = {regexp, single, CmdRegExp}},
     Cmds = [Wait, Prompt, Sync | I#istate.commands],
-    dlog(I, ?dmore, "want_more=false (shell_start)", []),
+    dlog(I, ?dmore, "want_more=~p (shell_start)", [I#istate.want_more]),
     I#istate{commands = Cmds}.
 
 shell_switch(I, #cmd{type = Type}, #shell{name = Name})
