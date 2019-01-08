@@ -297,6 +297,7 @@
          fail                    :: undefined | #pattern{},
          success                 :: undefined | #pattern{},
          loop_stack = []         :: [#loop{}],
+         stop_send_reply         :: undefined | fun(),
          expected                :: undefined | #cmd{},
          pre_expected = []       :: [#cmd{}],
          actual = <<>>           :: binary(),

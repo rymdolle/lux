@@ -283,35 +283,53 @@ timeout(C) ->
     end.
 
 adjust_stacks(C, From, When, IsRootLoop, NewCmd, CmdStack, Fun) ->
-    Fun(),
-    send_reply(C, From, {adjust_stacks_ack, self()}),
+    SendReply =
+        fun() ->
+                Fun(),
+                send_reply(C, From, {adjust_stacks_ack, self()})
+        end,
     LoopStack = C#cstate.loop_stack,
     case {NewCmd#cmd.type, When} of
         {loop, before} when IsRootLoop ->
+            SendReply(),
             Loop = #loop{mode = iterate, cmd = NewCmd},
             C#cstate{latest_cmd = NewCmd,
                      cmd_stack = CmdStack,
                      loop_stack = [Loop | LoopStack]};
         {loop, 'after'} when IsRootLoop,
                              (hd(LoopStack))#loop.mode =:= iterate ->
+            SendReply(),
             C#cstate{latest_cmd = NewCmd,
                      cmd_stack = CmdStack,
                      loop_stack = tl(LoopStack)};
         {loop, 'after'} when IsRootLoop,
                              (hd(LoopStack))#loop.mode =:= break ->
+            SendReply(),
             C#cstate{latest_cmd = NewCmd,
                      cmd_stack = CmdStack,
                      loop_stack = tl(LoopStack)};
         {loop, 'after'} when IsRootLoop ->
             %% endloop with pending break pattern
             Loop = hd(LoopStack),
-            LoopCmd = Loop#loop.mode,
-            {_, RegExp} = extract_regexp(LoopCmd#cmd.arg),
-            {C2, ActualStop} =
-                do_prepare_stop(C, RegExp,
-                                <<?loop_break_pattern_mismatch>>),
-            stop(C2, fail, ActualStop);
+            PreC = C#cstate{stop_send_reply = SendReply},
+            LoopC = match_patterns(PreC),
+            if
+                LoopC#cstate.loop_stack =/= LoopStack ->
+                    SendReply(),
+                    LoopC#cstate{latest_cmd = NewCmd,
+                                 cmd_stack = CmdStack,
+                                 loop_stack = tl(LoopStack),
+                                 stop_send_reply = undefined};
+                true ->
+                    BreakCmd = Loop#loop.mode,
+                    {_, RegExp} = extract_regexp(BreakCmd#cmd.arg),
+                    {StopC, ActualStop} =
+                        do_prepare_stop(LoopC, RegExp,
+                                        <<?loop_break_pattern_mismatch>>),
+                    stop(StopC, fail, ActualStop)
+            end;
         _ ->
+            SendReply(),
             C#cstate{latest_cmd = NewCmd,
                      cmd_stack = CmdStack}
     end.
@@ -1052,46 +1070,55 @@ match_break_patterns(C, Actual, AltRest, LogFuns) ->
     AllStack = lists:reverse(C#cstate.loop_stack),
     match_break_patterns(C, Actual, AltRest, AllStack, [], LogFuns).
 
-match_break_patterns(C, Actual, AltRest, [Loop|Stack] = AllStack, Acc, LF) ->
-    case Loop#loop.mode of
+match_break_patterns(C, Actual, AltRest, [Loop|Stack], Acc, LF) ->
+    BreakCmd = Loop#loop.mode,
+    case BreakCmd of
         iterate ->
             match_break_patterns(C, Actual, AltRest, Stack, [Loop|Acc], LF);
         break ->
             match_break_patterns(C, Actual, AltRest, Stack, [Loop|Acc], LF);
-        BreakCmd = #cmd{type = break} ->
-            {Res, _OptMulti} = match(Actual, BreakCmd),
-            case Res of
-                {match, Matches} ->
-                    C2 = clear_expected(C, " (break loop)", C#cstate.mode),
-                    C3 = opt_late_sync_reply(C2),
-                    LoopCmd = Loop#loop.cmd,
-                    BreakLoop = {break_pattern_matched, self(), LoopCmd},
-                    send_reply(C3, C3#cstate.parent, BreakLoop),
-                    {C4, _Match} =
-                        post_match(C3, Actual, Matches,
-                                   <<"loop break pattern matched ">>),
-                    Rest = C4#cstate.actual,
+        #cmd{type = break} ->
+            case match_break_cmd(C, Actual, Loop, BreakCmd) of
+                {match, C2} ->
                     %% Break all inner loops
-                    Breaks = [L#loop{mode = break} || L <- AllStack],
+                    Breaks = [L#loop{mode = break} || L <- [Loop|Stack]],
                     Acc2 = Breaks ++ Acc,
-                    C4#cstate{actual = Rest,
-                              waiting = true,
-                              loop_stack = Acc2};
+                    C2#cstate{loop_stack = Acc2};
                 nomatch ->
                     match_break_patterns(C, Actual, AltRest, Stack,
-                                         [Loop|Acc], LF);
-                {{'EXIT', Reason}, _} ->
-                    {_, RegExp} = extract_regexp(BreakCmd#cmd.arg),
-                    Err = ?FF("Bad regexp:\n\t~p\n"
-                              "Reason:\n\t~p\n",
-                              [RegExp, Reason]),
-                    stop(C, error, ?l2b(Err))
+                                         [Loop|Acc], LF)
             end
     end;
 match_break_patterns(C, _Actual, AltRest, [], Acc, LogFuns) ->
     %% No break. Log previous match and return alternate rest.
     [LF() || LF <- LogFuns],
     C#cstate{actual = AltRest, loop_stack = Acc}.
+
+match_break_cmd(C, Actual, Loop, BreakCmd) ->
+    {Res, _OptMulti} = match(Actual, BreakCmd),
+    case Res of
+        {match, Matches} ->
+            C2 = clear_expected(C, " (break loop)", C#cstate.mode),
+            C3 = opt_late_sync_reply(C2),
+            LoopCmd = Loop#loop.cmd,
+            BreakLoop = {break_pattern_matched, self(), LoopCmd},
+            send_reply(C3, C3#cstate.parent, BreakLoop),
+            {C4, _Match} =
+                post_match(C3, Actual, Matches,
+                           <<"loop break pattern matched ">>),
+            Rest = C4#cstate.actual,
+            {match,
+             C4#cstate{actual = Rest,
+                       waiting = true}};
+        nomatch ->
+            nomatch;
+        {{'EXIT', Reason}, _} ->
+            {_, RegExp} = extract_regexp(BreakCmd#cmd.arg),
+            Err = ?FF("Bad regexp:\n\t~p\n"
+                      "Reason:\n\t~p\n",
+                      [RegExp, Reason]),
+            stop(C, error, ?l2b(Err))
+    end.
 
 prepare_stop(C, Actual, Matches, Context) ->
     {C2, Match} = post_match(C, Actual, Matches, Context),
@@ -1101,6 +1128,10 @@ prepare_stop(C, Actual, Matches, Context) ->
 do_prepare_stop(C, Match, Context) ->
     Actual = <<Context/binary, "\"", Match/binary, "\"">>,
     C2 = clear_expected(C, " (prepare stop)", suspend),
+    case C2#cstate.stop_send_reply of
+        undefined -> ignore;
+        SendReply -> SendReply()
+    end,
     C3 = opt_late_sync_reply(C2),
     {C3, Actual}.
 
