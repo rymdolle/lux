@@ -1,13 +1,14 @@
-### INSTALL
+### Installation
 
-Read the file **INSTALL.md** or view it online on
-[GitHub](https://github.com/hawk/lux/blob/euc/tutorial/INSTALL.md) about
-how to do a local install of LUX, build and test the chatty app.
+Read the file **.../lux/tutorial/INSTALL.md** or view it online on
+[GitHub](https://github.com/hawk/lux/blob/euc/tutorial/INSTALL.md)
+about how to do a install LUX, build and test the chatty app.
 
 ### Background
   - ...
 
 ### Tail-f/Cisco
+  - Widely used for testing of Tail-f products
   - ConfD
     - Model driven configuration management framework for a network element
     - Render nortbound interfaces such as CLI, Netconf, SNMP, Rest, RestConf
