@@ -1,7 +1,11 @@
 Installation
 ============
 
-On MacOS, Lux can be installed with `brew install hawk/homebrew-hawk/lux`.
+On MacOS, Lux can be installed with
+
+>     brew tap hawk/homebrew-hawk
+>     brew install lux
+
 It will install Erlang and whatewer else Lux needs.
 
 TLDR;
@@ -17,10 +21,9 @@ The following software is required:
   runtime system must be installed in order to build the tool. Install
   `Erlang/OTP` from [source][Erlang/OTP] or use [pre-built packages][]:
 
->     brew tap hawk/homebrew-hawk
 >     brew install erlang
 
-           or
+* or
 
 >     sudo apt-get install erlang
 
